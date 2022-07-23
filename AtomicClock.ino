@@ -1,5 +1,3 @@
-#include "AtomicClock.h"
-
 #include <Wire.h> // Enable this line if using Arduino Uno, Mega, etc.
 #include <Adafruit_GFX.h>
 #include "Adafruit_LEDBackpack.h"
@@ -302,8 +300,8 @@ void decodeAndSetTime(void) {
             }
         }
     }
-    uint8_t dst = 0;
 #if DST_ENABLED
+    uint8_t dst = 0;
     // is dst not in effect(0), ending(1), beginning(2), or in effect(3)?
     if (ds == 0) {
         // not in effect
@@ -318,9 +316,11 @@ void decodeAndSetTime(void) {
       // dst is in effect
       dst = 1;
     }
-#endif
     // correct for timezone and daylight saving time
     hr += zoneHours + dst;
+#else
+    hr += zoneHours
+#endif
     if (hr >= 24) {
         // handle overflow
         dy += 1;
@@ -373,11 +373,12 @@ void writeToDisplay() {
     drawDots = !drawDots;
     matrix.print(time);
     matrix.drawColon(drawDots);
+    // TODO: Change brightness based on local time
     matrix.setBrightness(0); // 0-15 with 15 as brightest
     matrix.writeDisplay();
 }
 
-void loop() {
+bool checkFrame() {
     if (pr != EMPTY) {
         pr = EMPTY;
         if (dur) {
@@ -397,7 +398,7 @@ void loop() {
                 // once per minute
                 if (frameIndex == FRAME_SIZE) {
                     Serial.println("full frame detected");
-                    decodeAndSetTime();
+                    return true;
                 } else {
                     Serial.print("partial frame detected. frameindex: ");
                     Serial.println(frameIndex);
@@ -410,8 +411,15 @@ void loop() {
             code = CODE_N;
         }
     }
+    return false;
+}
+
+void loop() {
+    if (checkFrame()) {
+        decodeAndSetTime();
+    }
     if (digitalRead(RTC_INTERRUPT_PIN) != lastCycle) {
-        // 1 Hz signal from crystal clock
+        // 1 Hz signal from RTC
         lastCycle = digitalRead(RTC_INTERRUPT_PIN);
         if (lastCycle == LOW) {
             rtc.update();
