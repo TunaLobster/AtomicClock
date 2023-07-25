@@ -117,20 +117,20 @@ ISR(TIMER1_COMPA_vect)
 
 const int8_t zoneHours = -6; // Dallas time
 
-uint8_t frame[FRAME_SIZE], frameIndex = 0;
+uint8_t frame[FRAME_SIZE];
+uint8_t frameIndex = 0;
 uint16_t decode[FPEF]; // accumulated parts of frame
 //                             JanFebMarAprMayJunJulAugSepOctNovDec
 const uint8_t daysInMonth[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
 const uint16_t days_in_year = 365;
 
 Adafruit_7segment matrix = Adafruit_7segment();
-bool drawDots = true;
 
-uint8_t minute, hour, ly, ls, ds;
-uint16_t date, us, uc, year;
+int8_t minute, hour, ly, ls, ds;
+int16_t date, us, uc, year;
 
 uint8_t prevCode = CODE_N;
-int lastCycle = HIGH;
+bool lastCycle = 1;
 
 /**
  * Address of the version data. This should never change between versions.
@@ -178,6 +178,10 @@ void setup()
     if (is_initial_program_load())
     {
         rtc.autoTime();
+    }
+    if (rtc.is12Hour())
+    {
+        rtc.set24Hour(true);
     }
     rtc.writeSQW(SQW_SQUARE_1); // 1Hz signal on RTC_INTERRUPT_PIN
 
@@ -401,6 +405,7 @@ void decodeAndSetTime()
     uint16_t wk_date = date;
     uint8_t weekday = (wk_date += month < 3 ? year-- : year - 2, 23 * month / 9 + wk_date + 4 + year / 4 - year / 100 + year / 400) % 7;
     weekday += 1; // Library defines Sunday=1, Saturday=7
+    // 2 seconds for detecting the start of the minute by double markers (1 code plus 1 for...something that I forgot)
     rtc.setTime(2, minute, hour, weekday, date, month, year);
 
     if (Serial)
@@ -494,16 +499,15 @@ char *timeToDisplay(char *buffer, uint8_t h, uint8_t m)
 #else
     sprintf(buffer, "%02d%02d", h, m);
 #endif
-    // Serial.println(buffer);
     return buffer;
 }
 
-void writeToDisplay(uint8_t h, uint8_t m)
+void writeToDisplay(bool dots, uint8_t h, uint8_t m)
 {
-    drawDots = !drawDots;
     char buffer[5];
     matrix.println(timeToDisplay(buffer, h, m));
-    matrix.drawColon(drawDots);
+    matrix.drawColon(dots);
+    matrix.setBrightness(displayBrightness(h, m));
     matrix.writeDisplay();
 }
 
@@ -513,14 +517,12 @@ void loop()
     {
         decodeAndSetTime();
     }
-    if (digitalRead(RTC_INTERRUPT_PIN) != lastCycle)
+    // 1 Hz signal from RTC
+    const bool currentCycle = digitalRead(RTC_INTERRUPT_PIN);
+    if (currentCycle != lastCycle)
     {
-        // 1 Hz signal from RTC
-        lastCycle = digitalRead(RTC_INTERRUPT_PIN);
-        if (lastCycle == LOW)
-        {
-            rtc.update();
-            writeToDisplay(rtc.hour(), rtc.minute());
-        }
+        rtc.update();
+        writeToDisplay(currentCycle, rtc.hour(), rtc.minute());
+        lastCycle = currentCycle;
     }
 }
